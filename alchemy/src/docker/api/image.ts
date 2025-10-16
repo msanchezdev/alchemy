@@ -20,12 +20,20 @@ import type { DockerRegistry } from "./docker-registry.ts";
 
 export interface ImageProps<Registries extends Record<string, DockerRegistry>> {
   ref: string;
+  /**
+   * Build settings
+   * - `true`: try pull, if not found, build the image from cwd, no force
+   * - `false`: never build the image
+   * - `object`: build the image with the given settings
+   * @default false
+   */
   build?: boolean | ImageBuildProps;
   /**
    * Push policy and settings
    * - `true` | `'missing'`: push the image to the registry if it is not found in the registry.
    * - `false` | `'never'`: never push the image to the registry
    * - `'always'`: always push the image to the registry, equivalent to `force: true`
+   * @default false
    */
   push?: boolean | ImagePushPolicyShorthand | ImagePushProps<Registries>;
   /**
@@ -33,8 +41,14 @@ export interface ImageProps<Registries extends Record<string, DockerRegistry>> {
    * - `true` | `'missing'`: pull if the image is not found locally
    * - `false` | `'never'`: never pull
    * - `'always'`: always pull, equivalent to `force: true`
+   * @default true
    */
   pull?: boolean | ImagePullPolicyShorthand | ImagePullProps<Registries>;
+  /**
+   * Keep the image after destroying the resource.
+   * @default false
+   */
+  keep?: boolean;
   registry?: DockerRegistry | (keyof Registries & string);
   dockerHost?: DockerHost<Registries>;
 }
@@ -56,7 +70,7 @@ export const Image = Resource(
   },
   async function <const Registries extends Record<string, DockerRegistry>>(
     this: Context<Image, ImageProps<Registries>>,
-    _id: string,
+    id: string,
     props: ImageProps<Registries>,
   ): Promise<Image> {
     // Initialize Docker API client
@@ -83,7 +97,7 @@ export const Image = Resource(
     // shorthands
     const pull = () =>
       pullImage({
-        id: this.id,
+        id,
         fqn: this.fqn,
         pullConfig,
         props,
@@ -93,7 +107,7 @@ export const Image = Resource(
       });
     const push = () =>
       pushImage({
-        id: this.id,
+        id,
         fqn: this.fqn,
         pushConfig,
         props,
@@ -103,7 +117,7 @@ export const Image = Resource(
       });
     const build = () =>
       buildImage({
-        id: this.id,
+        id,
         fqn: this.fqn,
         buildConfig,
         props,
@@ -124,23 +138,37 @@ export const Image = Resource(
         throw err;
       });
 
+    if (this.phase === "delete") {
+      if (!props.keep) {
+        await api
+          .getImage(ref.fqn)
+          .remove()
+          .catch((err) => {
+            const reason = "reason" in err ? err.reason : err;
+            if (reason === "no such image") return;
+            if (/is using its referenced image/.test(err.message)) return;
+            throw err;
+          });
+      }
+      return this.destroy();
+    }
+
     // build.force takes precedence over pull.force
     if (buildConfig.enabled && (buildConfig.force || buildRequired)) {
       const builtImage = await build();
       if (pushConfig.enabled) await push();
-      return this(builtImage!);
+      return this(builtImage);
     }
 
     if (pullConfig.enabled && (pullConfig.force || !image)) {
       const pulledImage = await pull();
       if (pushConfig.enabled) await push();
-
       return this(pulledImage);
     } else if (image) {
       logger.task(this.fqn, {
         prefix: "cached",
         prefixColor: "yellowBright",
-        resource: this.id,
+        resource: id,
         message: `Image ${ref.fqn} already exists locally`,
         status: "success",
       });
@@ -300,7 +328,15 @@ async function pullImage<
               message: `Removing temporary image ${pullRef.fqn}`,
               status: "pending",
             });
-            await api.getImage(pullRef.fqn).remove();
+            await api
+              .getImage(pullRef.fqn)
+              .remove()
+              .catch((err) => {
+                const reason = "reason" in err ? err.reason : err;
+                if (reason === "no such image") return;
+                if (/is using its referenced image/.test(err.message)) return;
+                throw err;
+              });
           }
 
           return resolve(await api.getImage(ref.fqn).inspect());
@@ -514,7 +550,15 @@ async function pushImage<
               message: `Removing temporary image ${pushRef.fqn}`,
               status: "pending",
             });
-            await api.getImage(pushRef.fqn).remove();
+            await api
+              .getImage(pushRef.fqn)
+              .remove()
+              .catch((err) => {
+                const reason = "reason" in err ? err.reason : err;
+                if (reason === "no such image") return;
+                if (/is using its referenced image/.test(err.message)) return;
+                throw err;
+              });
           }
 
           return resolve(await api.getImage(ref.fqn).inspect());
@@ -907,7 +951,7 @@ async function buildImage<
   }
 
   const buildStream = await api.buildImage(tarStream, buildcfg);
-  await new Promise((resolve, reject) => {
+  return await new Promise<ImageInspectInfo>((resolve, reject) => {
     const onFinished = async (err: any) => {
       if (err) return reject(err);
       resolve(await api.getImage(ref.fqn).inspect());
@@ -1010,7 +1054,22 @@ export function parseImageRef(ref: string) {
   const image = {
     registry: "docker.io",
     get fqn() {
-      return `${this.registry}/${this.repository}${this.tag ? `:${this.tag}` : ""}${this.digest ? `@${this.digest}` : ""}`;
+      const parts = [];
+      if (this.registry) {
+        parts.push(this.registry);
+      }
+      if (this.repository) {
+        if (this.registry) parts.push("/");
+        parts.push(this.repository);
+      }
+      if (this.tag) {
+        parts.push(`:${this.tag}`);
+      }
+      if (this.digest) {
+        if (parts.length > 0) parts.push("@");
+        parts.push(this.digest);
+      }
+      return parts.join("");
     },
     set fqn(value: string) {
       const parsed = parseImageRef(value);
@@ -1023,6 +1082,13 @@ export function parseImageRef(ref: string) {
 
   // parse registry
   if (segments.length === 1) {
+    if (segments[0].startsWith("sha256:")) {
+      image.registry = "";
+      image.repository = "";
+      image.tag = "";
+      image.digest = segments[0];
+      return image;
+    }
     image.repository = `library/${segments[0]}`;
   } else if (segments.length > 1) {
     if (/\.|:\d+|^(localhost|\d+\.\d+\.\d+\.\d+)$/.test(segments[0])) {

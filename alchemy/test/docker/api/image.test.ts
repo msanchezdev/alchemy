@@ -274,4 +274,14 @@ describe("parseImageRef", () => {
       fqn: "docker.io/library/hello-world@sha256:1234567890",
     });
   });
+
+  test("should parse digest only", async () => {
+    expect(parseImageRef("sha256:1234567890")).toEqual({
+      registry: "",
+      repository: "",
+      tag: "",
+      digest: "sha256:1234567890",
+      fqn: "sha256:1234567890",
+    });
+  });
 });

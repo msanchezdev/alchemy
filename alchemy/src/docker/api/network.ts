@@ -77,6 +77,13 @@ export interface NetworkProps {
   labels?: {
     [key: string]: string;
   };
+  /**
+   * Adopt the network if it already exists.
+   */
+  adopt?: boolean;
+  /**
+   * Docker host to use.
+   */
   dockerHost?: DockerHost;
 }
 
@@ -136,14 +143,17 @@ export interface Network
  */
 export const Network = Resource(
   "docker::api::Network",
+  {
+    alwaysUpdate: true,
+  },
   async function (
     this: Context<Network>,
-    _id: string,
+    id: string,
     props: NetworkProps = {},
   ): Promise<Network> {
     // Initialize Docker API client
     const { dockerode: api } = await DockerHost(props.dockerHost);
-    const networkName = props.name ?? this.id;
+    const networkName = props.name ?? id;
     const existingNetwork = (await api
       .getNetwork(networkName)
       .inspect()
@@ -152,7 +162,16 @@ export const Network = Resource(
     if (this.phase === "delete") {
       if (existingNetwork) {
         await disconnectAll(api, existingNetwork.Id);
-        await api.getNetwork(existingNetwork.Id).remove();
+        await api
+          .getNetwork(existingNetwork.Id)
+          .remove()
+          .catch((reason) => {
+            if (reason.message.includes("pre-defined network")) {
+              return;
+            }
+
+            throw reason;
+          });
       }
 
       return this.destroy();
@@ -160,25 +179,24 @@ export const Network = Resource(
 
     const expectedNetwork: NetworkCreateOptions = {
       Name: networkName,
-      Scope: props.scope ?? existingNetwork?.Scope ?? "local",
-      Internal: props.internal ?? existingNetwork?.Internal ?? false,
-      Attachable: props.attachable ?? existingNetwork?.Attachable ?? false,
-      Ingress: props.ingress ?? existingNetwork?.Ingress ?? false,
-      EnableIPv6:
-        props.ipv6 !== undefined
-          ? Boolean(props.ipv6)
-          : (existingNetwork?.EnableIPv6 ?? false),
-      Driver: props.driver ?? existingNetwork?.Driver ?? "bridge",
+      Scope: props.scope ?? "local",
+      Internal: props.internal ?? false,
+      Attachable: props.attachable ?? false,
+      Ingress: props.ingress ?? false,
+      EnableIPv6: Boolean(props.ipv6) ?? false,
+      Driver: props.driver ?? "bridge",
       Options: {
         ...(existingNetwork?.Options ?? {}),
         ...(props.options ?? {}),
       },
-      Labels: props.labels ?? existingNetwork?.Labels ?? {},
+      Labels: {
+        ...existingNetwork?.Labels,
+        ...props.labels,
+      },
       IPAM: {
         ...(existingNetwork?.IPAM ?? {}),
-        Driver: props.ipamDriver ?? existingNetwork?.IPAM?.Driver ?? "default",
-        Options:
-          props.ipamOptions ?? existingNetwork?.IPAM?.Options ?? (null as any),
+        Driver: props.ipamDriver ?? "default",
+        Options: props.ipamOptions ?? (null as any),
       },
     };
 
@@ -228,8 +246,8 @@ export const Network = Resource(
       delete expectedNetwork.IPAM?.Config;
     }
 
-    // In some Docker Engine versions, EnableIPv4 is not present even if the engine supports v1.47 where
-    // this property was introduced.
+    // In some Docker Engine versions, EnableIPv4 is not present even if the
+    // engine supports v1.47 where this property was introduced.
     if (
       (existingNetwork && "EnableIPv4" in existingNetwork) ||
       props.ipv4 === false
@@ -242,6 +260,31 @@ export const Network = Resource(
     }
 
     if (this.phase === "update" && existingNetwork) {
+      // Check if there are any actual changes before recreating
+      const differences = diff(existingNetwork, expectedNetwork);
+      const propertiesToCheck = [
+        "Name",
+        "Scope",
+        "Driver",
+        "EnableIPv4",
+        "EnableIPv6",
+        "Internal",
+        "Attachable",
+        "Ingress",
+        "Options",
+        "IPAM",
+        "Labels",
+      ];
+
+      const hasChanges = propertiesToCheck.some((property) =>
+        differences.check(property),
+      );
+
+      if (!hasChanges) {
+        // No changes detected, return existing network
+        return this(existingNetwork);
+      }
+
       // For existing networks, we need to remove the network and create it again
       // We can't take advantage of alchemy's replace() because it behaves in
       // a create-then-destroy fashion.
@@ -251,7 +294,7 @@ export const Network = Resource(
       logger.task(this.fqn, {
         prefix: "disconnect",
         prefixColor: "yellowBright",
-        resource: this.id,
+        resource: id,
         message: `Disconnecting containers from network ${existingNetwork.Name}`,
         status: "pending",
       });
@@ -266,7 +309,7 @@ export const Network = Resource(
         logger.task(this.fqn, {
           prefix: "reconnect",
           prefixColor: "yellowBright",
-          resource: this.id,
+          resource: id,
           message: `Connecting containers to updated network ${networkName}`,
           status: "pending",
         });
@@ -274,7 +317,7 @@ export const Network = Resource(
         logger.task(this.fqn, {
           prefix: "reconnect",
           prefixColor: "yellowBright",
-          resource: this.id,
+          resource: id,
           message:
             "Failed to create network with updated properties. Recreating old network and connecting containers to it.",
           status: "pending",
@@ -283,7 +326,7 @@ export const Network = Resource(
         logger.task(this.fqn, {
           prefix: "reconnect",
           prefixColor: "yellowBright",
-          resource: this.id,
+          resource: id,
           message: "Reconnecting containers to old network.",
           status: "pending",
         });
@@ -296,6 +339,24 @@ export const Network = Resource(
         .getNetwork(networkName)
         .inspect()) as Network;
       return this(createdNetwork);
+    }
+
+    if (existingNetwork) {
+      // FIXME: Network exists but may not match expectedNetwork
+      if (props.adopt || this.scope.adopt) {
+        logger.task(this.fqn, {
+          prefix: "adopting",
+          prefixColor: "yellowBright",
+          resource: id,
+          message: `Adopting existing network ${networkName}`,
+          status: "pending",
+        });
+        return this(existingNetwork);
+      } else {
+        throw new Error(
+          `Network ${networkName} already exists, set adopt to true to adopt it`,
+        );
+      }
     }
 
     // Create new network

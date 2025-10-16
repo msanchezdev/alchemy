@@ -222,8 +222,9 @@ export function exists<O extends { returnValue?: boolean } = {}>(
   }
 }
 
-interface DiffResult<T> {
+export interface DiffResult<T> {
   changes: ReturnType<typeof detailedDiff>;
+
   /**
    * Check if any of the given paths have been added, deleted, or updated.
    */
