@@ -11,7 +11,7 @@ import readline from "node:readline";
 import zlib from "node:zlib";
 import tar from "tar-fs";
 import type { Context } from "../../context.ts";
-import { Resource } from "../../resource.ts";
+import { Resource, ResourceKind } from "../../resource.ts";
 import { formatBytes, parseBytes } from "../../util/bytes.ts";
 import { diff } from "../../util/diff.ts";
 import { logger } from "../../util/logger.ts";
@@ -1146,4 +1146,8 @@ function tryFiles(filenames: string[]): string | undefined {
   }
 
   return undefined;
+}
+
+export function isImage(resource: any): resource is Image {
+  return resource && resource[ResourceKind] === "docker::api::Image";
 }

@@ -2,6 +2,7 @@ import type { DurationString } from "../../../util/duration.ts";
 import type { DockerHost } from "../docker-host.ts";
 import type { DockerRegistry } from "../docker-registry.ts";
 import type { Image } from "../image.ts";
+import type { VolumeMountDefinition } from "./volumes.ts";
 
 export interface ContainerProps {
   /**
@@ -25,6 +26,12 @@ export interface ContainerProps {
    * The domain name to use for the container.
    */
   domain?: string;
+
+  /**
+   * Gives the container full access to the host.
+   * @default false
+   */
+  privileged?: boolean;
 
   /**
    * Commands run as this user inside the container. If omitted, commands run as the user specified in the image the container was started from.
@@ -81,8 +88,8 @@ export interface ContainerProps {
    * }
    */
   ports?:
-    | Record<string, true | string | number | (string | number)[]>
-    | (string | number)[]
+    | Record<string, true | PortBinding | PortBinding[]>
+    | PortBinding[]
     | true;
 
   /**
@@ -120,119 +127,28 @@ export interface ContainerProps {
     | "bridge"
     | "host"
     | (string & {})
-    | Record<
-        string,
-        {
-          /**
-           * Network-scoped aliases for this container
-           */
-          aliases?: string[];
+    | Record<string, NetworkEndpointConfig>;
 
-          /**
-           * IPv4 address.
-           */
-          ipv4?: string;
-
-          /**
-           * IPv6 address.
-           */
-          ipv6?: string;
-
-          /**
-           * Link-local IPv4 addresses.
-           */
-          linkLocalIPs?: string[];
-
-          /**
-           * MAC address for the endpoint on this network. The network driver
-           * might ignore this parameter.
-           * @example "02:42:ac:11:00:02"
-           */
-          macAddress?: string;
-
-          /**
-           * Driver-specific options
-           */
-          driverOpts?: { [key: string]: string };
-
-          /**
-           * This property determines which endpoint will provide the default
-           * gateway for a container. The endpoint with the highest priority
-           * will be used.
-           *
-           * If multiple endpoints have the same priority, endpoints are
-           * lexicographically sorted based on their network name, and the one
-           * that sorts first is picked.
-           */
-          priority?: number;
-        }
-      >;
+  /**
+   * Volume mounts for the container.
+   *
+   *
+   * @example
+   * {
+   *   "/var/lib/data": await Volume("data-volume"),
+   *   "/var/lib/mysql": Mount.Volume("mysql-data"),
+   *   "/var/log/mysql": Mount.Path("/var/log/mysql"),
+   *   "/app": "./",
+   *   "/tmp": Mount.Tmpfs(),
+   * }
+   */
+  volumes?: Record<string, VolumeMountDefinition>;
 
   /**
    * Health check configuration.
    * If omitted, inherit from image or parent image. If `null`, disables healthcheck.
    */
-  healthcheck?: {
-    /**
-     * The test to perform. Possible values:
-     * - `undefined`: inherit healthcheck from image or parent image
-     * - `null`: disable healthcheck
-     * - `string[]`: exec arguments directly (e.g. `["curl", "-f", "http://localhost/"]`)
-     * - `string`: run command with container's default shell (e.g. `"curl -f http://localhost/ || exit 1"`)
-     */
-    test?: undefined | null | string | string[];
-
-    /**
-     * Time to wait between checks.
-     * Can be a number in milliseconds or a duration string.
-     * `0` or `undefined` means inherit from image or parent image.
-     * @min '1ms'
-     * @example '1s'
-     * @example '1m 20s'
-     * @example 6 * 1000 // 6 seconds
-     */
-    interval?: number | DurationString;
-
-    /**
-     * The time to wait before considering the check to have hung.
-     * Can be a number in milliseconds or a duration string.
-     * `0` or `undefined` means inherit from image or parent image.
-     * @min '1ms'
-     * @example '1s'
-     * @example '1m 20s'
-     * @example 6 * 1000 // 6 seconds
-     */
-    timeout?: number | DurationString;
-
-    /**
-     * Start period for the container to initialize before starting health-retries countdown.
-     * Can be a number in milliseconds or a duration string.
-     * `0` or `undefined` means inherit from image or parent image.
-     * @min '1ms'
-     * @example '1s'
-     * @example '1m 20s'
-     * @example 6 * 1000 // 6 seconds
-     */
-    startPeriod?: number | DurationString;
-
-    /**
-     * The time to wait between checks during the start period.
-     * Can be a number in milliseconds or a duration string.
-     * `0` or `undefined` means inherit from image or parent image.
-     * @min '1ms'
-     * @example '1s'
-     * @example '1m 20s'
-     * @example 6 * 1000 // 6 seconds
-     */
-    startInterval?: number | DurationString;
-
-    /**
-     * The number of consecutive failures needed to consider a container as unhealthy.
-     * `0` or `undefined` means inherit from image or parent image.
-     * @default 3
-     */
-    retries?: number;
-  } | null;
+  healthcheck?: HealthcheckConfig | null;
 
   /**
    * Desired state of the container
@@ -259,3 +175,112 @@ export interface ContainerProps {
    */
   dockerHost?: DockerHost<Record<string, DockerRegistry>>;
 }
+
+export interface HealthcheckConfig {
+  /**
+   * The test to perform. Possible values:
+   * - `undefined`: inherit healthcheck from image or parent image
+   * - `null`: disable healthcheck
+   * - `string[]`: exec arguments directly (e.g. `["curl", "-f", "http://localhost/"]`)
+   * - `string`: run command with container's default shell (e.g. `"curl -f http://localhost/ || exit 1"`)
+   */
+  test?: undefined | null | string | string[];
+
+  /**
+   * Time to wait between checks.
+   * Can be a number in milliseconds or a duration string.
+   * `0` or `undefined` means inherit from image or parent image.
+   * @min '1ms'
+   * @example '1s'
+   * @example '1m 20s'
+   * @example 6 * 1000 // 6 seconds
+   */
+  interval?: number | DurationString;
+
+  /**
+   * The time to wait before considering the check to have hung.
+   * Can be a number in milliseconds or a duration string.
+   * `0` or `undefined` means inherit from image or parent image.
+   * @min '1ms'
+   * @example '1s'
+   * @example '1m 20s'
+   * @example 6 * 1000 // 6 seconds
+   */
+  timeout?: number | DurationString;
+
+  /**
+   * Start period for the container to initialize before starting health-retries countdown.
+   * Can be a number in milliseconds or a duration string.
+   * `0` or `undefined` means inherit from image or parent image.
+   * @min '1ms'
+   * @example '1s'
+   * @example '1m 20s'
+   * @example 6 * 1000 // 6 seconds
+   */
+  startPeriod?: number | DurationString;
+
+  /**
+   * The time to wait between checks during the start period.
+   * Can be a number in milliseconds or a duration string.
+   * `0` or `undefined` means inherit from image or parent image.
+   * @min '1ms'
+   * @example '1s'
+   * @example '1m 20s'
+   * @example 6 * 1000 // 6 seconds
+   */
+  startInterval?: number | DurationString;
+
+  /**
+   * The number of consecutive failures needed to consider a container as unhealthy.
+   * `0` or `undefined` means inherit from image or parent image.
+   * @default 3
+   */
+  retries?: number;
+}
+
+export interface NetworkEndpointConfig {
+  /**
+   * Network-scoped aliases for this container
+   */
+  aliases?: string[];
+
+  /**
+   * IPv4 address.
+   */
+  ipv4?: string;
+
+  /**
+   * IPv6 address.
+   */
+  ipv6?: string;
+
+  /**
+   * Link-local IPv4 addresses.
+   */
+  linkLocalIPs?: string[];
+
+  /**
+   * MAC address for the endpoint on this network. The network driver
+   * might ignore this parameter.
+   * @example "02:42:ac:11:00:02"
+   */
+  macAddress?: string;
+
+  /**
+   * Driver-specific options
+   */
+  driverOpts?: { [key: string]: string };
+
+  /**
+   * This property determines which endpoint will provide the default
+   * gateway for a container. The endpoint with the highest priority
+   * will be used.
+   *
+   * If multiple endpoints have the same priority, endpoints are
+   * lexicographically sorted based on their network name, and the one
+   * that sorts first is picked.
+   */
+  priority?: number;
+}
+
+export type PortBinding = string | number;

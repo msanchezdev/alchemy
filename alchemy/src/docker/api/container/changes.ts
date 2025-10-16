@@ -1,14 +1,16 @@
 import type Dockerode from "dockerode";
-import type { ContainerCreateOptions, ContainerInspectInfo } from "dockerode";
+import { logger } from "../../../util/logger.ts";
 import type { ContainerProps } from "./types.ts";
-import { normalizeName, strictEqual } from "./utils.ts";
+import { checkLabels, normalizeName, strictEqual } from "./utils.ts";
 
 export async function hasContainerChanged(
-  existing: ContainerInspectInfo | null,
-  expected: ContainerCreateOptions,
+  existing: Dockerode.ContainerInspectInfo | null,
+  expected: Dockerode.ContainerCreateOptions & { name: string },
   prevProps: ContainerProps | undefined,
   nextProps: ContainerProps,
   api: Dockerode,
+  fqn: string,
+  id: string,
 ): Promise<"soft" | "hard" | "none"> {
   const hardReasons = {
     // Always recreate on changes
@@ -35,7 +37,7 @@ export async function hasContainerChanged(
     healthcheck: () =>
       !strictEqual(existing?.Config?.Healthcheck, expected.Healthcheck),
     // Labels
-    labels: () => !strictEqual(existing?.Config?.Labels, expected?.Labels),
+    labels: () => checkLabels(existing?.Config?.Labels, expected?.Labels),
     // Command
     command: () => !strictEqual(existing?.Config?.Cmd, expected.Cmd),
     // Entrypoint
@@ -54,13 +56,35 @@ export async function hasContainerChanged(
     // Port bindings
     portBindings: () =>
       !strictEqual(
-        existing?.HostConfig?.PortBindings,
-        expected.HostConfig?.PortBindings,
-      ) || !strictEqual(existing?.Config?.ExposedPorts, expected.ExposedPorts),
+        existing?.HostConfig?.PortBindings ?? {},
+        expected.HostConfig?.PortBindings ?? {},
+      ) ||
+      !strictEqual(
+        existing?.Config?.ExposedPorts ?? {},
+        expected.ExposedPorts ?? {},
+      ),
+    volumes: () =>
+      !strictEqual(
+        existing?.HostConfig?.Mounts ?? [],
+        expected.HostConfig?.Mounts ?? [],
+      ),
+    privileged: () =>
+      !strictEqual(
+        existing?.HostConfig?.Privileged,
+        expected.HostConfig?.Privileged,
+      ),
   };
+
   const [hardChange] =
     Object.entries(hardReasons).find(([_reason, fn]) => fn()) ?? [];
-  if (hardChange) {
+  if (hardChange && prevProps) {
+    logger.task(fqn, {
+      prefix: "soft",
+      prefixColor: "yellowBright",
+      resource: id,
+      message: `Container ${normalizeName(existing?.Name)} has changed (${hardChange}) and will be recreated...`,
+      status: "pending",
+    });
     return "hard";
   }
 
@@ -100,7 +124,14 @@ export async function hasContainerChanged(
 
   const [softChange] =
     Object.entries(softReasons).find(([_reason, fn]) => fn()) ?? [];
-  if (softChange) {
+  if (softChange && prevProps) {
+    logger.task(fqn, {
+      prefix: "soft",
+      prefixColor: "yellowBright",
+      resource: id,
+      message: `Container ${normalizeName(existing?.Name)} has changed (${softChange}). Applying...`,
+      status: "pending",
+    });
     return "soft";
   }
 

@@ -1,7 +1,17 @@
 import type Dockerode from "dockerode";
 import type { Context } from "../../context.ts";
-import { Resource } from "../../resource.ts";
+import { Resource, ResourceKind } from "../../resource.ts";
+import { parseBytes } from "../../util/bytes.ts";
+import { logger } from "../../util/logger.ts";
+import type {
+  BindMount,
+  ImageMount,
+  PartialMountSettings,
+  TmpfsMount,
+  VolumeMount,
+} from "./container/volumes.ts";
 import { DockerHost } from "./docker-host.ts";
+import type { Image } from "./image.ts";
 
 /**
  * Properties for creating a Docker volume
@@ -97,24 +107,29 @@ export const Volume = Resource(
     // Initialize Docker API client
     const { dockerode: api } = await DockerHost(props.dockerHost);
     const volumeName =
-      props.name ?? this.output?.Name ?? this.scope.createPhysicalName(id);
+      props.name ??
+      this.output?.Name ??
+      [this.scope.appName, id, this.scope.stage]
+        .map((s) => s.replaceAll(/[^a-z0-9_-]/gi, "_"))
+        .join("_");
 
     // Check if volume already exists
     const existingVolume = (await api
       .getVolume(volumeName)
       .inspect()
-      .catch(() => null)) as Volume | null;
+      .catch(() => {})) as Volume | null;
 
     if (this.phase === "delete") {
-      if (existingVolume && !props.keep) {
+      if (existingVolume && props.keep === false) {
         await api
           .getVolume(existingVolume.Name)
           .remove()
-          .catch((reason) => {
-            // Ignore error if volume is already gone
-            if (!reason.message.includes("No such volume")) {
-              throw reason;
+          .catch((error) => {
+            if (error.reason === "no such volume") {
+              return;
             }
+
+            throw error;
           });
       }
 
@@ -123,7 +138,14 @@ export const Volume = Resource(
 
     // If volume exists
     if (existingVolume) {
-      if (props.adopt || this.scope.adopt) {
+      if (props.adopt || this.scope.adopt || !props.name) {
+        logger.task(this.fqn, {
+          prefix: "adopting",
+          prefixColor: "yellowBright",
+          resource: id,
+          message: `Adopting volume ${volumeName}`,
+          status: "pending",
+        });
         return this(existingVolume);
       } else {
         throw new Error(
@@ -143,8 +165,94 @@ export const Volume = Resource(
     await api.createVolume(volumeOptions);
 
     // Get the created volume info
-    const volumeInfo = (await api.getVolume(volumeName).inspect()) as Volume;
-
+    const volumeInfo = await api.getVolume(volumeName).inspect();
     return this(volumeInfo);
   },
 );
+
+export const Mount = {
+  Volume(
+    source: Volume | string,
+    props: Omit<VolumeMount, "type" | "source"> = {},
+  ): PartialMountSettings {
+    return {
+      Type: "volume",
+      Source: source,
+      Target: null,
+      ReadOnly: props.readonly ? true : undefined,
+      Consistency: props.consistency,
+      VolumeOptions: {
+        // @ts-expect-error - docker excludes it if false, thus undefined is allowed
+        NoCopy: props.copy === false ? true : undefined,
+        Subpath: props.subPath,
+        // @ts-expect-error - dockerode typing doesnt allow undefined
+        Labels: props.labels,
+        DriverConfig:
+          props.driverName || props.driverOptions
+            ? {
+                Name: props.driverName,
+                Options: props.driverOptions,
+              }
+            : (undefined as any),
+      },
+    };
+  },
+  Bind(
+    source: Volume | string,
+    props: Omit<BindMount, "type" | "source"> = {},
+  ): PartialMountSettings {
+    return {
+      Type: "bind",
+      Source: getVolumeName(source),
+      Target: null,
+      ReadOnly: props.readonly ? true : undefined,
+      Consistency: props.consistency,
+      BindOptions: {
+        Propagation: props.propagation ?? "rprivate",
+        // @ts-expect-error - dockerode typing doesnt have this field
+        NonRecursive: props.nonRecursive ? true : undefined,
+        ReadOnlyNonRecursive: props.readonlyNonRecursive ? true : undefined,
+        ReadOnlyForceRecursive: props.readonlyForceRecursive ? true : undefined,
+        CreateMountpoint: props.create ? true : undefined,
+      },
+    };
+  },
+  Image(
+    source: string | Image,
+    props: Omit<ImageMount, "type" | "source"> = {},
+  ): PartialMountSettings {
+    return {
+      Type: "image",
+      Source: typeof source === "string" ? source : source.Id,
+      Target: null,
+      ReadOnly: props.readonly ? true : undefined,
+      Consistency: props.consistency,
+      ImageOptions: {
+        Subpath: props.subPath,
+      },
+    };
+  },
+  Tmpfs(props: Omit<TmpfsMount, "type"> = {}): PartialMountSettings {
+    return {
+      Type: "tmpfs",
+      Target: null,
+      ReadOnly: props.readonly ? true : undefined,
+      Consistency: props.consistency,
+      TmpfsOptions: {
+        // @ts-expect-error - dockerode typing doesnt allow undefined
+        SizeBytes:
+          typeof props.size === "string" ? parseBytes(props.size) : props.size,
+        // @ts-expect-error - dockerode typing doesnt allow undefined
+        Mode: props.mode,
+      },
+    };
+  },
+};
+
+export function isVolume(resource: any): resource is Volume {
+  return resource && resource[ResourceKind] === "docker::api::Volume";
+}
+
+function getVolumeName(source: Volume | string): string {
+  return typeof source === "string" ? source : source.Name;
+}

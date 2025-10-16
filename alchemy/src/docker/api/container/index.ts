@@ -21,6 +21,7 @@ import {
   normalizeName,
   parseRestartPolicy,
 } from "./utils.ts";
+import { parseVolumeMounts } from "./volumes.ts";
 
 /**
  * Docker Container resource
@@ -108,10 +109,12 @@ export const Container = Resource(
             : {}),
       },
       HostConfig: {
+        Privileged: props.privileged ?? false,
         NetworkMode: parseNetworkMode(props.networking),
         PortBindings: parsePortBindings(props.ports),
         PublishAllPorts: props.ports === true,
         RestartPolicy: parseRestartPolicy(props.restart),
+        Mounts: await parseVolumeMounts(props.volumes, dockerHost),
       },
       NetworkingConfig: {
         EndpointsConfig:
@@ -135,7 +138,6 @@ export const Container = Resource(
             : {},
       },
     };
-
     await cleanTempOrphans({
       api,
       id,
@@ -149,6 +151,8 @@ export const Container = Resource(
       this.props,
       props,
       api,
+      this.fqn,
+      id,
     );
 
     if (this.phase === "delete") {
@@ -309,12 +313,6 @@ async function recreateContainer(opts: {
     });
     await container.stop();
   }
-
-  await ensureState({
-    id,
-    container: createdContainer,
-    status,
-  });
 
   logger.task(fqn, {
     prefix: "removing",

@@ -2,6 +2,8 @@ import type Dockerode from "dockerode";
 import { logger } from "../../../util/logger.ts";
 import type { ContainerProps } from "./types.ts";
 
+export const symbolTransient = Symbol("Transient data");
+
 export function normalizeName<T extends string | undefined>(name: T): T {
   return name?.replace(/^\/?/, "") as T;
 }
@@ -142,4 +144,28 @@ export async function cleanTempOrphans(opts: {
     });
     await api.getContainer(container.Id).remove();
   }
+}
+
+// Platform-injected labels cant be detected by us
+const platformLabels: RegExp[] = [
+  // Docker Desktop
+  /^desktop\.docker\.io\//,
+  // Docker Compose,
+  /^com\.docker\./,
+];
+
+export function checkLabels(
+  prevLabels: Record<string, string> | undefined,
+  nextLabels: Record<string, string> | undefined,
+): boolean {
+  prevLabels = structuredClone(prevLabels);
+
+  for (const label of Object.keys(prevLabels ?? {})) {
+    if (platformLabels.some((pattern) => pattern.test(label))) {
+      // @ts-expect-error - false-positive
+      delete prevLabels[label];
+    }
+  }
+
+  return !strictEqual(prevLabels, nextLabels);
 }

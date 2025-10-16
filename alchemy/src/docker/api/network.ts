@@ -348,7 +348,7 @@ export const Network = Resource(
           prefix: "adopting",
           prefixColor: "yellowBright",
           resource: id,
-          message: `Adopting existing network ${networkName}`,
+          message: `Adopting network ${networkName}`,
           status: "pending",
         });
         return this(existingNetwork);

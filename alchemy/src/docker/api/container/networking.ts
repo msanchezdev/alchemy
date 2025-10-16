@@ -16,7 +16,7 @@ export function parseNetworkMode(
           ? networking
           : networking && typeof networking === "object"
             ? "none"
-            : undefined;
+            : "bridge";
 }
 
 export async function reconcileNetworks(opts: {
