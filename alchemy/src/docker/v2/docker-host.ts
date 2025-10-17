@@ -1,7 +1,7 @@
 import Dockerode from "dockerode";
 import fs from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
+import pathe from "pathe";
 import { alchemy } from "../../alchemy.ts";
 import { CredentialsStore } from "./credentials-store.ts";
 import { DockerRegistry, type _DockerRegistry } from "./docker-registry.ts";
@@ -142,7 +142,7 @@ export async function DockerHost<
   Registries extends Record<string, DockerRegistry>,
 >(
   props: DockerHostProps<Registries> = {
-    dir: path.resolve(process.env.DOCKER_CONFIG || os.homedir(), ".docker"),
+    dir: pathe.resolve(process.env.DOCKER_CONFIG || os.homedir(), ".docker"),
   },
 ): Promise<DockerHost<Registries>> {
   if (props instanceof _DockerHost) {
@@ -151,14 +151,14 @@ export async function DockerHost<
 
   const configDir =
     props.dir === true
-      ? process.env.DOCKER_CONFIG || path.join(os.homedir(), ".docker")
+      ? process.env.DOCKER_CONFIG || pathe.join(os.homedir(), ".docker")
       : props.dir || undefined;
 
   let dockerConfig: DockerCliConfig | undefined;
 
-  if (configDir && (await fs.exists(path.resolve(configDir, "config.json")))) {
+  if (configDir && (await fs.exists(pathe.resolve(configDir, "config.json")))) {
     dockerConfig = JSON.parse(
-      await fs.readFile(path.resolve(configDir, "config.json"), "utf8"),
+      await fs.readFile(pathe.resolve(configDir, "config.json"), "utf8"),
     ) as DockerCliConfig;
 
     if (dockerConfig.credsStore && !props.credentialsStore) {

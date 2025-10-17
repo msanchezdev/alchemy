@@ -1,5 +1,5 @@
 import type Dockerode from "dockerode";
-import path from "node:path";
+import pathe from "pathe";
 import type { DockerHost } from "../docker-host.ts";
 import { Image, isImage } from "../image.ts";
 import { isVolume, Mount, Volume } from "../volume.ts";
@@ -156,7 +156,7 @@ export async function parseVolumeMounts(
       }
 
       if (source.startsWith("./")) {
-        source = path.resolve(source);
+        source = pathe.resolve(source);
       }
 
       mounts.push({
@@ -208,7 +208,7 @@ export async function parseVolumeMounts(
         }
 
         if (source.Source.startsWith("./")) {
-          source.Source = path.resolve(source.Source);
+          source.Source = pathe.resolve(source.Source);
         }
 
         mounts.push({

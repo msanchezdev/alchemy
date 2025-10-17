@@ -110,9 +110,9 @@
       "bun": "./src/docker/index.ts",
       "import": "./lib/docker/index.js"
     },
-    "./docker/api": {
-      "bun": "./src/docker/api/index.ts",
-      "import": "./lib/docker/api/index.js"
+    "./docker/v2": {
+      "bun": "./src/docker/v2/index.ts",
+      "import": "./lib/docker/v2/index.js"
     },
     "./esbuild": {
       "bun": "./src/esbuild/index.ts",

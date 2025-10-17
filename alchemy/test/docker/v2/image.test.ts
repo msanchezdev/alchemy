@@ -2,13 +2,13 @@ import { describe, expect } from "vitest";
 import { alchemy } from "../../../src/alchemy.ts";
 import { BRANCH_PREFIX } from "../../util.ts";
 // must import this or else alchemy.test won't exist
-import type { DockerRegistry } from "../../../src/docker/api/docker-registry.ts";
+import type { DockerRegistry } from "../../../src/docker/v2/docker-registry.ts";
 import {
   parseImageRef,
   parsePullConfig,
   parsePushConfig,
   type ImageProps,
-} from "../../../src/docker/api/image.ts";
+} from "../../../src/docker/v2/image.ts";
 import "../../../src/test/vitest.ts";
 
 const test = alchemy.test(import.meta, {

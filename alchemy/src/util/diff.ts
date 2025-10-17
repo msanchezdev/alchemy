@@ -222,7 +222,7 @@ export function exists<O extends { returnValue?: boolean } = {}>(
   }
 }
 
-export interface DiffResult<T> {
+export interface Diff2Result<T> {
   changes: ReturnType<typeof detailedDiff>;
 
   /**
@@ -259,10 +259,10 @@ export interface DiffResult<T> {
         : "updated" | false;
 }
 
-export function diff<T extends Record<string, any>>(
+export function diff2<T extends Record<string, any>>(
   original: T,
   changed: any,
-): DiffResult<T> {
+): Diff2Result<T> {
   const changes = detailedDiff(original, changed);
 
   return {

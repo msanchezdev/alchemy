@@ -1,19 +1,14 @@
 import { describe } from "vitest";
 import { alchemy } from "../../../src/alchemy.ts";
-import { createDockerApi } from "../../../src/docker/api/api.ts";
 import { BRANCH_PREFIX } from "../../util.ts";
 // must import this or else alchemy.test won't exist
 import "../../../src/test/vitest.ts";
 
-const api = createDockerApi();
-
-const test = alchemy.test(import.meta, {
+const _test = alchemy.test(import.meta, {
   prefix: BRANCH_PREFIX,
 });
 
 describe("Docker Network Resource", () => {
-  const testId = `${BRANCH_PREFIX}-test-network`;
-
   // TODO: Create network
   // TODO: Update network
   // TODO: Destroy network

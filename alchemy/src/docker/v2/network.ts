@@ -2,7 +2,7 @@ import type Dockerode from "dockerode";
 import type { NetworkCreateOptions } from "dockerode";
 import type { Context } from "../../context.ts";
 import { Resource } from "../../resource.ts";
-import { diff } from "../../util/diff.ts";
+import { diff2 } from "../../util/diff.ts";
 import { logger } from "../../util/logger.ts";
 import { DockerHost } from "./docker-host.ts";
 
@@ -261,7 +261,7 @@ export const Network = Resource(
 
     if (this.phase === "update" && existingNetwork) {
       // Check if there are any actual changes before recreating
-      const differences = diff(existingNetwork, expectedNetwork);
+      const differences = diff2(existingNetwork, expectedNetwork);
       const propertiesToCheck = [
         "Name",
         "Scope",
@@ -431,7 +431,7 @@ async function reconnectAll(
 }
 
 function shouldPreserveIp(existingNetwork: Network, newNetwork: any): boolean {
-  const differences = diff(existingNetwork, newNetwork);
+  const differences = diff2(existingNetwork, newNetwork);
   const reasons: string[] = [];
   const ipInvalidatingProperties = [
     "Scope",

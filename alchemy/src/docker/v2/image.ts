@@ -5,15 +5,15 @@
 import dockerIgnoreBuilder from "@balena/dockerignore";
 import type Dockerode from "dockerode";
 import type { ImageInspectInfo } from "dockerode";
-import fs, { existsSync } from "node:fs";
-import path from "node:path";
+import fs from "node:fs";
 import readline from "node:readline";
 import zlib from "node:zlib";
+import pathe from "pathe";
 import tar from "tar-fs";
 import type { Context } from "../../context.ts";
 import { Resource, ResourceKind } from "../../resource.ts";
 import { formatBytes, parseBytes } from "../../util/bytes.ts";
-import { diff } from "../../util/diff.ts";
+import { diff2 } from "../../util/diff.ts";
 import { logger } from "../../util/logger.ts";
 import { DockerHost } from "./docker-host.ts";
 import type { DockerRegistry } from "./docker-registry.ts";
@@ -81,10 +81,10 @@ export const Image = Resource(
     const ref = parseImageRef(props.ref);
 
     // Parse pull config
-    const pullConfig = parsePullConfig(props);
-    const pushConfig = parsePushConfig(props);
-    const buildConfig = parseBuildConfig(props);
-    const changes = diff(
+    const pullConfig = await parsePullConfig(props);
+    const pushConfig = await parsePushConfig(props);
+    const buildConfig = await parseBuildConfig(props);
+    const changes = diff2(
       {
         ...(typeof this.props?.build === "object" ? this.props.build : {}),
       },
@@ -246,7 +246,7 @@ export interface ImagePullProps<
   registry?: DockerRegistry | (keyof Registries & string);
 }
 
-export function parsePullConfig<
+export async function parsePullConfig<
   Registries extends Record<string, DockerRegistry>,
 >(props: ImageProps<Registries>) {
   const policy =
@@ -421,7 +421,7 @@ export interface ImagePushProps<
   failOnDigestMismatch?: boolean;
 }
 
-export function parsePushConfig<
+export async function parsePushConfig<
   Registries extends Record<string, DockerRegistry>,
 >(props: ImageProps<Registries>) {
   const policy =
@@ -468,7 +468,6 @@ async function pushImage<
 
   const remoteImage = await api
     .getImage(pushRef.fqn)
-    // @ts-expect-error dockerode types are incorrect
     .distribution({
       authconfig: registryAuth ? { base64: registryAuth } : undefined,
     })
@@ -531,7 +530,6 @@ async function pushImage<
   return new Promise<ImageInspectInfo>((resolve, reject) => {
     api.getImage(pushRef.fqn).push(
       {
-        // @ts-expect-error
         authconfig: registryAuth ? { base64: registryAuth } : undefined,
       },
       (err, stream) => {
@@ -768,9 +766,9 @@ export interface ImageBuildProps {
   };
 }
 
-function parseBuildConfig<Registries extends Record<string, DockerRegistry>>(
-  props: ImageProps<Registries>,
-) {
+async function parseBuildConfig<
+  Registries extends Record<string, DockerRegistry>,
+>(props: ImageProps<Registries>) {
   const policy =
     (typeof props.build === "object"
       ? props.build.policy || "missing"
@@ -793,19 +791,19 @@ function parseBuildConfig<Registries extends Record<string, DockerRegistry>>(
 
   // Docker file resolution
   if (!config.dockerfile) {
-    config.dockerfile = tryFiles([
-      path.join(config.context, "Dockerfile"),
-      path.join(config.context, "dockerfile"),
+    config.dockerfile = await tryFiles([
+      pathe.join(config.context, "Dockerfile"),
+      pathe.join(config.context, "dockerfile"),
     ]);
     if (!config.dockerfile) {
       throw new Error(
         `Dockerfile not found in build context: ${config.context}`,
       );
     }
-    config.dockerfile = path.relative(config.context, config.dockerfile);
+    config.dockerfile = pathe.relative(config.context, config.dockerfile);
   } else if (
-    path
-      .relative(config.context, path.join(config.context, config.dockerfile))
+    pathe
+      .relative(config.context, pathe.join(config.context, config.dockerfile))
       .startsWith("..")
   ) {
     // TODO: This should be supported somehow as docker build does support this.
@@ -858,10 +856,10 @@ async function buildImage<
 
   let filterFn: ((path: string) => boolean) | undefined;
   let ignoreFn: ((path: string) => boolean) | undefined;
-  if (existsSync(path.join(context, ".dockerignore"))) {
+  if (await fs.promises.exists(pathe.join(context, ".dockerignore"))) {
     const dockerIgnore = dockerIgnoreBuilder({ ignorecase: false });
     dockerIgnore.add(
-      fs.readFileSync(path.join(context, ".dockerignore"), "utf-8"),
+      fs.readFileSync(pathe.join(context, ".dockerignore"), "utf-8"),
     );
     filterFn = dockerIgnore.createFilter();
     ignoreFn = (path) => !filterFn!(path);
@@ -1138,9 +1136,9 @@ export function parseImageRef(ref: string) {
   return image;
 }
 
-function tryFiles(filenames: string[]): string | undefined {
+async function tryFiles(filenames: string[]): Promise<string | undefined> {
   for (const filename of filenames) {
-    if (existsSync(filename)) {
+    if (await fs.promises.exists(filename)) {
       return filename;
     }
   }

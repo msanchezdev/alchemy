@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { diff, exists } from "../../src/util/diff.ts";
+import { diff2, exists } from "../../src/util/diff.ts";
 
-describe("diff()", () => {
+describe("diff2()", () => {
   describe("any()", () => {
     it("if no prop specified, should check for any", () => {
       const obj = { a: 1, b: 2 };
       const changed = { a: 1, b: 2, c: 3 };
-      const changes = diff(obj, changed);
+      const changes = diff2(obj, changed);
       expect(changes.any()).toBe(true);
       expect(changes.any([])).toBe(true);
       expect(changes.any(["a"])).toBe(false);
