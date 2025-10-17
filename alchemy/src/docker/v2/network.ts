@@ -16,33 +16,39 @@ export interface NetworkProps {
    * @example "my-network"
    */
   name?: string;
+
   /**
    * Name of the network driver plugin to use.
    * @default "bridge"
    */
   driver?: "bridge" | "host" | "none" | "overlay" | "macvlan" | (string & {});
+
   /**
    * The level at which the network exists (e.g. `swarm` for cluster-wide
    * or `local` for machine level).
    * @default "local"
    */
   scope?: string;
+
   /**
    * Restrict external access to the network.
    */
   internal?: boolean;
+
   /**
    * Globally scoped network is manually attachable by regular
    * containers from workers in swarm mode.
    * @default true
    */
   attachable?: boolean;
+
   /**
    * Ingress network is the network which provides the routing-mesh
    * in swarm mode.
    *
    */
   ingress?: boolean;
+
   // /**
   //  * Creates a config-only network. Config-only networks are placeholder
   //  * networks for network configurations to be used by other networks.
@@ -57,30 +63,42 @@ export interface NetworkProps {
   ipamOptions?: {
     [key: string]: string;
   } | null;
+
   /**
    * IPv4 Configuration, if true the network will have an IPv4 subnet, if an array of IpamConfig the network will have the given subnet and gateway.
    */
   ipv4?: boolean | [IpamConfig, ...IpamConfig[]];
+
   /**
    * IPv6 Configuration, if true the network will have an IPv6 subnet, if an array of IpamConfig the network will have the given subnet and gateway.
    */
   ipv6?: boolean | [IpamConfig, ...IpamConfig[]];
+
   /**
    * Network specific options to be used by the drivers.
    */
   options?: {
     [key: string]: string;
   };
+
   /**
    * User-defined key/value metadata.
    */
   labels?: {
     [key: string]: string;
   };
+
   /**
    * Adopt the network if it already exists.
    */
   adopt?: boolean;
+
+  /**
+   * Keep the network after destroying the resource.
+   * @default false
+   */
+  keep?: boolean;
+
   /**
    * Docker host to use.
    */
@@ -160,7 +178,7 @@ export const Network = Resource(
       .catch(() => null)) as Network | null;
 
     if (this.phase === "delete") {
-      if (existingNetwork) {
+      if (existingNetwork && !props.keep) {
         await disconnectAll(api, existingNetwork.Id);
         await api
           .getNetwork(existingNetwork.Id)

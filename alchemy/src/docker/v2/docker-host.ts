@@ -1,7 +1,7 @@
 import Dockerode from "dockerode";
 import fs from "node:fs/promises";
 import os from "node:os";
-import pathe from "pathe";
+import path from "pathe";
 import { alchemy } from "../../alchemy.ts";
 import { CredentialsStore } from "./credentials-store.ts";
 import { DockerRegistry, type _DockerRegistry } from "./docker-registry.ts";
@@ -138,27 +138,33 @@ class _DockerHost<Registries extends Record<string, DockerRegistry>> {
 }
 Object.defineProperty(_DockerHost, "name", { value: "DockerHost" });
 
+let defaultDockerHost: _DockerHost<Record<string, DockerRegistry>> | undefined;
+
 export async function DockerHost<
   Registries extends Record<string, DockerRegistry>,
 >(
   props: DockerHostProps<Registries> = {
-    dir: pathe.resolve(process.env.DOCKER_CONFIG || os.homedir(), ".docker"),
+    dir: path.resolve(process.env.DOCKER_CONFIG || os.homedir(), ".docker"),
   },
 ): Promise<DockerHost<Registries>> {
   if (props instanceof _DockerHost) {
     return props;
   }
 
+  if (defaultDockerHost) {
+    return defaultDockerHost as any;
+  }
+
   const configDir =
     props.dir === true
-      ? process.env.DOCKER_CONFIG || pathe.join(os.homedir(), ".docker")
+      ? process.env.DOCKER_CONFIG || path.join(os.homedir(), ".docker")
       : props.dir || undefined;
 
   let dockerConfig: DockerCliConfig | undefined;
 
-  if (configDir && (await fs.exists(pathe.resolve(configDir, "config.json")))) {
+  if (configDir && (await fs.exists(path.resolve(configDir, "config.json")))) {
     dockerConfig = JSON.parse(
-      await fs.readFile(pathe.resolve(configDir, "config.json"), "utf8"),
+      await fs.readFile(path.resolve(configDir, "config.json"), "utf8"),
     ) as DockerCliConfig;
 
     if (dockerConfig.credsStore && !props.credentialsStore) {
@@ -322,7 +328,8 @@ export async function DockerHost<
     }
   }
 
-  return new _DockerHost(props);
+  defaultDockerHost ??= new _DockerHost(props);
+  return defaultDockerHost as any;
 }
 export type DockerHost<
   Registries extends Record<string, DockerRegistry> = Record<

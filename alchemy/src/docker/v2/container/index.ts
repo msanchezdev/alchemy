@@ -53,7 +53,10 @@ export const Container = Resource(
       typeof props.image === "string"
         ? await Image("image", {
             ref: props.image,
-            dockerHost,
+            // explicitly passing props.dockerHost instead of dockerHost to make
+            // it fallback to default host and prevent the serialization of
+            // the virtual tokens
+            dockerHost: props.dockerHost,
           }).then((image) => image.Id)
         : props.image.Id;
     const imageDefaults = await api.getImage(imageRef).inspect();
@@ -210,7 +213,7 @@ export const Container = Resource(
           expected: expectedContainer,
         });
 
-        return this(await existingContainer.inspect());
+        return this(normalize(await existingContainer.inspect()));
       }
 
       if (changes === "hard") {
@@ -231,7 +234,7 @@ export const Container = Resource(
           after: createdContainer,
           expected: expectedContainer,
         });
-        return this(await createdContainer.inspect());
+        return this(normalize(await createdContainer.inspect()));
       }
     }
 
@@ -246,7 +249,7 @@ export const Container = Resource(
         expected: expectedContainer,
       });
 
-      return this(await existingContainer.inspect());
+      return this(normalize(await existingContainer.inspect()));
     }
 
     logger.task(this.fqn, {
@@ -275,7 +278,7 @@ export const Container = Resource(
       after: createdContainer,
       expected: expectedContainer,
     });
-    return this(await createdContainer.inspect());
+    return this(normalize(await createdContainer.inspect()));
   },
 );
 
@@ -405,4 +408,13 @@ async function ensureState(opts: {
 
     await container.unpause();
   }
+}
+
+function normalize(
+  details: Dockerode.ContainerInspectInfo,
+): Dockerode.ContainerInspectInfo {
+  return {
+    ...details,
+    Name: normalizeName(details.Name),
+  };
 }

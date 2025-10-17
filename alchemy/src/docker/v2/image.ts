@@ -861,7 +861,12 @@ async function buildImage<
     dockerIgnore.add(
       fs.readFileSync(pathe.join(context, ".dockerignore"), "utf-8"),
     );
-    filterFn = dockerIgnore.createFilter();
+    const filter = dockerIgnore.createFilter();
+    filterFn = (path) => {
+      path = pathe.relative(context, path);
+      const result = filter(path);
+      return result;
+    };
     ignoreFn = (path) => !filterFn!(path);
   }
 
@@ -869,8 +874,8 @@ async function buildImage<
   let count = 0;
   const tarStream = tar
     .pack(context, {
-      ignore: ignoreFn,
       filter: filterFn,
+      ignore: ignoreFn,
       map(header) {
         readline.moveCursor(process.stdout, 0, -1);
         readline.clearLine(process.stdout, 1);
