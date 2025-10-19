@@ -306,8 +306,24 @@ async function pullImage<
       (err, stream) => {
         if (err) return reject(err);
 
+        // Track line positions for each layer ID
+        const lineTracker = new Map<string, number>();
+        let currentLine = 0;
+
         const onFinished = async (err: any) => {
           if (err) return reject(err);
+
+          // Clear any remaining tracked lines
+          if (lineTracker.size > 0) {
+            readline.moveCursor(process.stdout, 0, -currentLine);
+            for (let i = 0; i <= currentLine; i++) {
+              readline.clearLine(process.stdout, 0);
+              readline.moveCursor(process.stdout, 0, 1);
+            }
+            readline.moveCursor(process.stdout, 0, -lineTracker.size);
+          }
+
+          // Go back to first tracked line
 
           logger.task(fqn, {
             prefix: "tagging",
@@ -344,13 +360,42 @@ async function pullImage<
         const onProgress = (event: any) => {
           if (!event.status) return;
 
-          logger.task(fqn, {
-            prefix: "pulling",
-            prefixColor: "yellowBright",
-            resource: `${id}${event.id ? ` (${event.id})` : ""}`,
-            message: `${event.status} ${event.progress || ""}`,
-            status: "pending",
-          });
+          const key: string = event.id || "pull";
+          const msg = `${event.status} ${event.progress || ""}`;
+
+          // Check if this ID already has a line position
+          const existingLine = lineTracker.get(key);
+
+          if (existingLine !== undefined) {
+            // Update existing line: move cursor up, clear line, rewrite
+            const linesToMove = currentLine - existingLine;
+            readline.moveCursor(process.stdout, 0, -linesToMove);
+            readline.clearLine(process.stdout, 0);
+            readline.cursorTo(process.stdout, 0);
+
+            logger.task(fqn, {
+              prefix: "pulling",
+              prefixColor: "yellowBright",
+              resource: `${id}${event.id ? ` (${event.id})` : ""}`,
+              message: msg,
+              status: "pending",
+            });
+
+            // Move cursor back to the end
+            readline.moveCursor(process.stdout, 0, linesToMove);
+          } else {
+            // New line: track it and increment current line
+            lineTracker.set(key, currentLine);
+            currentLine++;
+
+            logger.task(fqn, {
+              prefix: "pulling",
+              prefixColor: "yellowBright",
+              resource: `${id}${event.id ? ` (${event.id})` : ""}`,
+              message: msg,
+              status: "pending",
+            });
+          }
         };
 
         api.modem.followProgress(stream!, onFinished, onProgress);
@@ -535,8 +580,21 @@ async function pushImage<
       (err, stream) => {
         if (err) return reject(err);
 
+        // Track line positions for each layer ID
+        const lineTracker = new Map<string, number>();
+        let currentLine = 0;
+
         const onFinished = async (err: any) => {
           if (err) return reject(err);
+
+          // Clear any remaining tracked lines
+          if (lineTracker.size > 0) {
+            readline.moveCursor(process.stdout, 0, -currentLine);
+            for (let i = 0; i <= currentLine; i++) {
+              readline.clearLine(process.stdout, 0);
+              readline.moveCursor(process.stdout, 0, 1);
+            }
+          }
 
           // In some cases when pushing to a different registry, the user
           // may not want to keep the image after pulling.
@@ -564,13 +622,42 @@ async function pushImage<
         const onProgress = (event: any) => {
           if (!event.status) return;
 
-          logger.task(fqn, {
-            prefix: "pushing",
-            prefixColor: "yellowBright",
-            resource: `${id}${event.id ? ` (${event.id})` : ""}`,
-            message: `${event.status} ${event.progress || ""}`,
-            status: "pending",
-          });
+          const key: string = event.id || "push";
+          const msg = `${event.status} ${event.progress || ""}`;
+
+          // Check if this ID already has a line position
+          const existingLine = lineTracker.get(key);
+
+          if (existingLine !== undefined) {
+            // Update existing line: move cursor up, clear line, rewrite
+            const linesToMove = currentLine - existingLine;
+            readline.moveCursor(process.stdout, 0, -linesToMove);
+            readline.clearLine(process.stdout, 0);
+            readline.cursorTo(process.stdout, 0);
+
+            logger.task(fqn, {
+              prefix: "pushing",
+              prefixColor: "yellowBright",
+              resource: `${id}${event.id ? ` (${event.id})` : ""}`,
+              message: msg,
+              status: "pending",
+            });
+
+            // Move cursor back to the end
+            readline.moveCursor(process.stdout, 0, linesToMove);
+          } else {
+            // New line: track it and increment current line
+            lineTracker.set(key, currentLine);
+            currentLine++;
+
+            logger.task(fqn, {
+              prefix: "pushing",
+              prefixColor: "yellowBright",
+              resource: `${id}${event.id ? ` (${event.id})` : ""}`,
+              message: msg,
+              status: "pending",
+            });
+          }
         };
 
         api.modem.followProgress(stream!, onFinished, onProgress);
@@ -955,6 +1042,10 @@ async function buildImage<
 
   const buildStream = await api.buildImage(tarStream, buildcfg);
   return await new Promise<ImageInspectInfo>((resolve, reject) => {
+    // Track the last command output line position to update in place
+    let lastCommandOutputLine: number | undefined;
+    let totalLines = 0;
+
     const onFinished = async (err: any) => {
       if (err) return reject(err);
       resolve(await api.getImage(ref.fqn).inspect());
@@ -976,13 +1067,49 @@ async function buildImage<
 
       if (!msg || msg.trim() === "") return;
 
-      logger.task(fqn, {
-        prefix: "building",
-        prefixColor: "yellowBright",
-        resource: `${id} (${key})`,
-        message: msg.replace(/\n$/, ""),
-        status: "pending",
-      });
+      // Check if this is a step declaration (e.g., "Step 1/5 : FROM ...")
+      const isStepDeclaration = /^Step \d+\/\d+/.test(msg);
+
+      // Check if this is command output (has an id and is not a step declaration)
+      const isCommandOutput = evt.id && !isStepDeclaration;
+
+      if (isCommandOutput && lastCommandOutputLine !== undefined) {
+        // Update existing command output line: move cursor up, clear line, rewrite
+        const linesToMove = totalLines - lastCommandOutputLine;
+        readline.moveCursor(process.stdout, 0, -linesToMove);
+        readline.clearLine(process.stdout, 0);
+        readline.cursorTo(process.stdout, 0);
+
+        logger.task(fqn, {
+          prefix: "building",
+          prefixColor: "yellowBright",
+          resource: `${id} (${key})`,
+          message: msg.replace(/\n$/, ""),
+          status: "pending",
+        });
+
+        // Move cursor back to the end
+        readline.moveCursor(process.stdout, 0, linesToMove);
+      } else {
+        // New line: either step declaration or first command output
+        if (isCommandOutput) {
+          // Track this as the last command output line
+          lastCommandOutputLine = totalLines;
+        } else {
+          // Step declaration - reset command output tracking
+          lastCommandOutputLine = undefined;
+        }
+
+        totalLines++;
+
+        logger.task(fqn, {
+          prefix: "building",
+          prefixColor: "yellowBright",
+          resource: `${id}${evt.id ? ` (${key})` : ""}`,
+          message: msg.replace(/\n$/, ""),
+          status: "pending",
+        });
+      }
     };
 
     api.modem.followProgress(buildStream, onFinished, onProgress);
