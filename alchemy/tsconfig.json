@@ -1,6 +1,11 @@
 {
   "extends": "../tsconfig.base.json",
-  "include": ["package.json", "src/**/*.ts", "src/**/*.js", "src/**/*.tsx"],
+  "include": [
+    "package.json",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.tsx"
+  ],
   "compilerOptions": {
     "types": [],
     "composite": true,
@@ -15,7 +20,6 @@
     "target": "ESNext",
     "allowJs": true,
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
-    "incremental": true
+    "rewriteRelativeImportExtensions": true
   }
 }
